@@ -47,6 +47,7 @@ public class SetupDao {
 
             // Create a new user and save it
             User bob = new User("bob@gmail.com", "secret", "Bob");
+            bob.email = "bob@gmail.com";
             entityManager.persist(bob);
             
             // Create a new post

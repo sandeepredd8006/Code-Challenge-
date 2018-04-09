@@ -74,6 +74,8 @@ public class Routes implements ApplicationRoutes {
         
         router.GET().route("/hotel/reserve").with(ReservationController::getAllReservations);
         router.POST().route("/hotel/reservations").with(HotelController::getRoomInfoByDate);
+        router.POST().route("/hotel/changeReservation/update").with(HotelController::updateReservation);
+        router.POST().route("/hotel/changeReservation/cancel").with(HotelController::cancelReservation);
         router.POST().route("/hotel/reserve").with(ReservationController::makeReservation);
         router.POST().route("/hotel/insertReservation").with(ReservationController::insertReservation);
 

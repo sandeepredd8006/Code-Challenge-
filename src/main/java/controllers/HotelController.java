@@ -5,6 +5,7 @@ import com.google.inject.Inject;
 import dao.ReservationDao;
 import dao.RoomDao;
 import dao.UserDao;
+import models.ReservationParam;
 import models.RoomDto;
 import models.RoomParam;
 import models.RoomsDto;
@@ -50,5 +51,25 @@ public class HotelController {
 
     public Result createRooms(RoomsDto roomsDto) {
         return Results.json().render(roomDao.postRooms(roomsDto));
+    }
+
+    public Result updateReservation(ReservationParam reservationUpdateParama) {
+        Result result = Results.json().render("OK!!!");
+        try{
+            reservationDao.updateReservation(reservationUpdateParama);
+        } catch (Exception e) {
+            result = Results.json().render(e.getMessage());
+        }
+        return result;
+    }
+
+    public Result cancelReservation(ReservationParam reservationUpdateParama) {
+        Result result = Results.json().render("OK!!!");
+        try{
+            reservationDao.cancelReservation(reservationUpdateParama);
+        } catch (Exception e) {
+            result = Results.json().render(e.getMessage());
+        }
+        return result;
     }
 }

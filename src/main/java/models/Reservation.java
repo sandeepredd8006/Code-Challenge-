@@ -52,7 +52,6 @@ public class Reservation {
 
     @PrePersist
     protected void onCreate() {
-        // System.out.println("Hello pre-Persist");
         created = new Date();
     }
   

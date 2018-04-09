@@ -6,6 +6,7 @@ import java.util.Calendar;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import javax.persistence.EntityManager;
 import javax.persistence.TypedQuery;
@@ -16,6 +17,7 @@ import com.google.inject.persist.Transactional;
 
 import models.Reservation;
 import models.ReservationDto;
+import models.ReservationParam;
 import models.ReservationsDto;
 import models.Room;
 import models.RoomInfoDto;
@@ -178,7 +180,7 @@ public class ReservationDao {
             user.email = reservationDto.email;
             persistUser(entityManager, user);
         } else {
-            user = userList.get(0);
+            user = userList.get(0); // got a user
         }
 
         persistReservation(entityManager, user, roomList.get(0), checkInDate, checkOutDate);
@@ -218,6 +220,136 @@ public class ReservationDao {
         }
 
         persistReservation(entityManager, user, roomList.get(0), checkInDate, checkOutDate);
+    }
+
+    @UnitOfWork
+    public void updateReservation(ReservationParam reservationParam) throws Exception {
+        Calendar now = Calendar.getInstance();
+        EntityManager entityManager = entitiyManagerProvider.get();
+        if (!reservationParam.action.equals("update")){
+            throw new Exception("Wrong action!!!");
+        }
+        
+        TypedQuery<User> query = entityManager.createQuery("SELECT x FROM User x WHERE x.fullname = :fullname AND x.email = :email", User.class);
+        List<User> userList = query.setParameter("fullname", reservationParam.fullname).setParameter("email", reservationParam.email).getResultList();
+        if (userList.isEmpty()) {
+            throw new Exception("User {" + reservationParam.fullname + "} not found!!!");
+        }
+        List<Room> roomList = entityManager.createQuery("SELECT x FROM Room x WHERE x.roomNumber = :roomNumber", Room.class).setParameter("roomNumber", reservationParam.roomNumber).getResultList();
+        if (roomList.isEmpty()) {
+            throw new Exception("Room {" + reservationParam.roomNumber + "} does not exist!!!");
+        }
+
+        User user = userList.get(0);
+        Room room = roomList.get(0);
+
+        // String fromCheckInDate = simpleDateFormat.format(reservationParam.fromCheckInDate);
+        // String fromCheckOutDate = simpleDateFormat.format(reservationParam.fromCheckOutDate);
+
+        // check if the record for that exist
+        Reservation requestReservation = null;
+        for( Reservation reservation : room.users) {
+            String checkInDate = simpleDateFormat.format(reservation.checkInDate);
+            String checkOutDate = simpleDateFormat.format(reservation.checkOutDate);
+            if (checkInDate.equals(reservationParam.fromCheckInDate) && checkOutDate.equals(reservationParam.fromCheckOutDate)) { // found the record we are looking at
+                requestReservation = reservation;
+                break;
+            }    
+        }
+
+        if (requestReservation == null) {
+            throw new Exception("You did not reserve room in this range you specified!!!");
+        }
+
+        // room exist, now check if the change reservation is within qualified range
+        
+        Date nowDate = now.getTime();
+        if (reservationParam.toCheckInDate.compareTo(simpleDateFormat.format(nowDate)) < 0) {
+            throw new Exception("You cannot check in in the past!!!!");
+        }
+
+        if (reservationParam.toCheckOutDate.compareTo(simpleDateFormat.format(nowDate)) < 0) {
+            throw new Exception("You cannot check out in the past!!!!");
+        }
+
+        // rate limiter
+        long duration = requestReservation.created.getTime() - now.getTime().getTime();
+        long diffInMinutes = TimeUnit.MILLISECONDS.toMinutes(duration);
+        if (diffInMinutes <= 1) {
+            throw new Exception("You are changing reservation within 1 minute. Sit tight and check back after 1 minute");
+        }
+        Date finalCheckInDate = getDateWithCurrentTime(now, reservationParam.toCheckInDate);
+        Date finalCheckOutDate = getDateWithCurrentTime(now, reservationParam.toCheckOutDate);
+
+        // now change the reservation
+        changeReservationDate(entityManager, requestReservation, finalCheckInDate, finalCheckOutDate);
+    }
+
+    public void cancelReservation(ReservationParam reservationParam) throws Exception {
+        Calendar now = Calendar.getInstance();
+        EntityManager entityManager = entitiyManagerProvider.get();
+        if (!reservationParam.action.equals("cancel")) {
+            throw new Exception("Wrong action!!!");
+        }
+        
+        TypedQuery<User> query = entityManager.createQuery("SELECT x FROM User x WHERE x.fullname = :fullname AND x.email = :email", User.class);
+        List<User> userList = query.setParameter("fullname", reservationParam.fullname).setParameter("email", reservationParam.email).getResultList();
+        if (userList.isEmpty()) {
+            throw new Exception("User {" + reservationParam.fullname + "} not found!!!");
+        }
+        List<Room> roomList = entityManager.createQuery("SELECT x FROM Room x WHERE x.roomNumber = :roomNumber", Room.class).setParameter("roomNumber", reservationParam.roomNumber).getResultList();
+        if (roomList.isEmpty()) {
+            throw new Exception("Room {" + reservationParam.roomNumber + "} does not exist!!!");
+        }
+
+        User user = userList.get(0);
+        Room room = roomList.get(0);
+
+        // String fromCheckInDate = simpleDateFormat.format(reservationParam.fromCheckInDate);
+        // String fromCheckOutDate = simpleDateFormat.format(reservationParam.fromCheckOutDate);
+
+        // check if the record for that exist
+        Reservation requestReservation = null;
+        for( Reservation reservation : room.users) {
+            String checkInDate = simpleDateFormat.format(reservation.checkInDate);
+            String checkOutDate = simpleDateFormat.format(reservation.checkOutDate);
+            if (checkInDate.equals(reservationParam.fromCheckInDate) && checkOutDate.equals(reservationParam.fromCheckOutDate)) { // found the record we are looking at
+                requestReservation = reservation;
+                break;
+            }    
+        }
+
+        if (requestReservation == null) {
+            throw new Exception("You did not reserve room in this range you specified!!!");
+        }
+
+        // room exist, now check if the change reservation is within qualified range
+        // cancel, no need to check for date, it is ignore
+
+        // rate limiter
+        long duration = requestReservation.created.getTime() - now.getTime().getTime();
+        long diffInMinutes = TimeUnit.MILLISECONDS.toMinutes(duration);
+        if (diffInMinutes <= 1) {
+            throw new Exception("You are changing reservation within 1 minute. Sit tight and check back after 1 minute");
+        }
+
+        // now change the reservation
+        removeReservation(entityManager, requestReservation);  
+    }
+
+    @Transactional
+    public void changeReservationDate(EntityManager entityManager, Reservation reservation, Date checkInDate, Date checkOutDate) {
+        reservation.checkInDate = checkInDate;
+        reservation.checkOutDate = checkOutDate;
+        entityManager.persist(reservation);
+        entityManager.clear();
+    }
+
+    @Transactional
+    public void removeReservation(EntityManager entityManager, Reservation reservation) {
+        reservation.user.removeRoom(reservation.room);
+        entityManager.remove(reservation);
+        entityManager.clear();
     }
 
     static boolean inBetween(Date in, Date a, Date b) {
